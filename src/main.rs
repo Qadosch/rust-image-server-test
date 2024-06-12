@@ -1,15 +1,28 @@
-use actix_web::{get, App, HttpResponse, HttpServer, Responder};
+use actix_web::{web, App, HttpServer};
+use std::sync::Mutex;
 
-#[get("/")]
-async fn next_image() -> impl Responder {
-    HttpResponse::Ok().body("Hello world!")
+struct AppStateWithCounter {
+    counter: Mutex<i32>, // <- Mutex is necessary to mutate safely across threads
+}
+
+async fn index(data: web::Data<AppStateWithCounter>) -> String {
+    let mut counter = data.counter.lock().unwrap(); // <- get counter's MutexGuard
+    *counter += 1; // <- access counter inside MutexGuard
+
+    format!("Request number: {counter}") // <- response with count
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    HttpServer::new(|| {
+    let counter = web::Data::new(AppStateWithCounter {
+        counter: Mutex::new(0),
+    });
+
+    HttpServer::new(move || {
+        // move counter into the closure
         App::new()
-            .service(next_image)
+            .app_data(counter.clone()) // <- register the created data
+            .route("/", web::get().to(index))
     })
     .bind(("0.0.0.0", 8080))?
     .run()
